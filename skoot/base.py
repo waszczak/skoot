@@ -182,6 +182,14 @@ class _SelectiveTransformerWrapper(six.with_metaclass(dsutils._WritableDoc,
         cols = self.fit_cols_
         validate_test_set_columns(cols, X.columns)
 
+        # when overwriting all columns, first save the original order of the columns
+        overwriting_all_transformed_cols = (list(self.cols) == list(self.trans_col_name))
+        if overwriting_all_transformed_cols:
+            original_col_order = list(X.columns)
+
+        # check if the input data has duplicate columns:
+        duplicate_columns_present = (len(cols) != X[cols].shape[1])
+
         # get the transformer
         est = self.estimator_
         transform = est.transform(X[cols])
@@ -190,7 +198,7 @@ class _SelectiveTransformerWrapper(six.with_metaclass(dsutils._WritableDoc,
         trans = self.trans_col_name
         n_trans_cols = transform.shape[1]
         if is_iterable(trans):
-            if len(trans) != n_trans_cols:
+            if (len(trans) != n_trans_cols) and not duplicate_columns_present:
                 raise ValueError("dim mismatch in transformed column names "
                                  "and transformed column shape! (%i!=%i)"
                                  % (len(trans), n_trans_cols))
@@ -204,7 +212,9 @@ class _SelectiveTransformerWrapper(six.with_metaclass(dsutils._WritableDoc,
         # stack the transformed variables onto the RIGHT side
         right = pd.DataFrame.from_records(
             data=transform,
-            columns=trans)
+            columns=(X[cols].columns
+                     if (overwriting_all_transformed_cols and duplicate_columns_present)
+                     else trans))
 
         # set the index of right to be equal to that of the input so
         # we can concat seamlessly
@@ -212,6 +222,13 @@ class _SelectiveTransformerWrapper(six.with_metaclass(dsutils._WritableDoc,
 
         # concat if needed
         x = pd.concat([X[other_nms], right], axis=1) if other_nms else right
+
+        if overwriting_all_transformed_cols:
+            # first de-duplicate
+            x = x.loc[:,~x.columns.duplicated()]
+            # then put in original order
+            x = x[original_col_order]
+
         return dataframe_or_array(x, self.as_df)
 
     @classmethod

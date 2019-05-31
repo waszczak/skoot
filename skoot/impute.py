@@ -5,6 +5,7 @@
 from __future__ import division, print_function, absolute_import
 
 import pandas as pd
+import numpy as np
 
 from sklearn.ensemble import BaggingRegressor, BaggingClassifier
 from sklearn.externals import six
@@ -278,7 +279,22 @@ class SelectiveImputer(BasePDTransformer):
         # now apply the stats to the X
         mask = _get_mask(X[cols], self.missing_values)
         for colname in cols:
-            X.loc[mask[colname], colname] = stats[colname]
+            # Made this compatible with DFs having duplicate columns
+            # (duplicate in terms of both the columns' name and the columns' data contents)
+            one_dimensional_boolean_row_mask = pd.DataFrame(
+                mask[colname]).take([0], axis=1).values.ravel()
+
+            column_loc = X.columns.get_loc(colname)
+
+            one_dimensional_boolean_column_mask = (
+                column_loc if isinstance(column_loc, np.ndarray)
+                else np.array([ind == column_loc for (ind, _) in enumerate(X.columns)]))
+
+            fill_in_value = (stats[colname] if np.shape(stats[colname]) == ()
+                             else np.array(stats[colname])[0])
+
+            X.loc[one_dimensional_boolean_row_mask,
+                  one_dimensional_boolean_column_mask] = fill_in_value
 
         return dataframe_or_array(X, self.as_df)
 
